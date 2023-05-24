@@ -290,6 +290,9 @@ func (h *Handler) GetOnSaleItems(c echo.Context) error {
 	// TODO: not found handling
 	// http.StatusNotFound(404)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "items not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -321,6 +324,9 @@ func (h *Handler) GetItem(c echo.Context) error {
 	// TODO: not found handling
 	// http.StatusNotFound(404)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "item not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -352,6 +358,9 @@ func (h *Handler) GetUserItems(c echo.Context) error {
 	// TODO: not found handling
 	// http.StatusNotFound(404)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "items not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -377,10 +386,11 @@ func (h *Handler) GetCategories(c echo.Context) error {
 	cats, err := h.ItemRepo.GetCategories(ctx)
 	// TODO: not found handling
 	// http.StatusNotFound(404)
-	if len(cats) == 0 {
-		return echo.NewHTTPError(http.StatusNotFound, "Categories not found")
-	}
+	
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "categories not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
