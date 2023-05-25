@@ -165,6 +165,10 @@ func (h *Handler) Login(c echo.Context) error {
 	if err := c.Bind(req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err)
 	}
+	// 入力値（ID・パスワード）の存在チェック
+    if req.UserID == 0 || req.Password == "" {
+        return echo.NewHTTPError(http.StatusBadRequest, "UserID and password are required")
+    }
 
 	user, err := h.UserRepo.GetUser(ctx, req.UserID)
 	if err != nil {
