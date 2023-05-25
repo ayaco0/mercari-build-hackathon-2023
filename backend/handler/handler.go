@@ -169,12 +169,15 @@ func (h *Handler) Login(c echo.Context) error {
     if req.UserID == 0 || req.Password == "" {
         return echo.NewHTTPError(http.StatusBadRequest, "UserID and password are required")
     }
-
+	// ユーザの存在チェック
 	user, err := h.UserRepo.GetUser(ctx, req.UserID)
 	if err != nil {
+		if err == sql.ErrNoRows {
+            return echo.NewHTTPError(http.StatusNotFound, "user not found")
+        }
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-
+	
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
 		if err == bcrypt.ErrMismatchedHashAndPassword {
 			return echo.NewHTTPError(http.StatusUnauthorized, err)
