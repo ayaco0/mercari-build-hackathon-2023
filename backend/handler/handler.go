@@ -266,6 +266,9 @@ func (h *Handler) Sell(c echo.Context) error {
 	}
 
 	item, err := h.ItemRepo.GetItem(ctx, req.ItemID)
+	if item.Price < 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid price")
+	}
 	// TODO: not found handling
 	// http.StatusNotFound(404)
 	if err != nil {
@@ -413,6 +416,8 @@ func (h *Handler) AddBalance(c echo.Context) error {
 	req := new(addBalanceRequest)
 	if err := c.Bind(req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err)
+	} else if req.Balance < 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "balance must be positive");
 	}
 
 	userID, err := getUserID(c)
@@ -426,7 +431,6 @@ func (h *Handler) AddBalance(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-
 	if err := h.UserRepo.UpdateBalance(ctx, userID, user.Balance+req.Balance); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
