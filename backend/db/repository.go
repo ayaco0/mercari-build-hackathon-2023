@@ -3,7 +3,9 @@ package db
 import (
 	"context"
 	"database/sql"
+	"net/http"
 
+	"github.com/labstack/echo/v4"
 	"github.com/mercari-build/mecari-build-hackathon-2023/backend/domain"
 )
 
@@ -22,6 +24,16 @@ func NewUserRepository(db *sql.DB) UserRepository {
 }
 
 func (r *UserDBRepository) AddUser(ctx context.Context, user domain.User) (int64, error) {
+    // 名前の重複チェック
+    var nameCount int
+    if err := r.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE name = ?", user.Name).Scan(&nameCount); err != nil {
+        return 0, err
+    }
+    if nameCount > 0 {
+        return 0, echo.NewHTTPError(http.StatusBadRequest, "Name is already taken")
+    }
+
+	//重複がない場合はユーザを追加
 	if _, err := r.ExecContext(ctx, "INSERT INTO users (name, password) VALUES (?, ?)", user.Name, user.Password); err != nil {
 		return 0, err
 	}

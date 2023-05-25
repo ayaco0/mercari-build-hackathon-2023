@@ -158,6 +158,10 @@ func (h *Handler) Register(c echo.Context) error {
 
 	userID, err := h.UserRepo.AddUser(c.Request().Context(), domain.User{Name: req.Name, Password: string(hash)})
 	if err != nil {
+		//AddUserで名前の重複チェックを行い、重複がある場合は400を返す
+		if httpErr, isHTTPError := err.(*echo.HTTPError); isHTTPError {
+			return httpErr
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
