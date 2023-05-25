@@ -12,8 +12,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
-	"github.com/mercari-build/mecari-build-hackathon-2023/backend/db"
-	"github.com/mercari-build/mecari-build-hackathon-2023/backend/domain"
+	"github.com/ayaco0/mecari-build-hackathon-2023/backend/db"
+	"github.com/ayaco0/mecari-build-hackathon-2023/backend/domain"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -270,7 +270,7 @@ func (h *Handler) Sell(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid price")
 	}
 	// TODO: not found handling
-	// http.StatusNotFound(404)
+	// http.StatusPreconditionFailed(412)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -427,7 +427,7 @@ func (h *Handler) AddBalance(c echo.Context) error {
 
 	user, err := h.UserRepo.GetUser(ctx, userID)
 	// TODO: not found handling
-	// http.StatusNotFound(404)
+	// http.StatusPreconditionFailed(412)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -448,7 +448,7 @@ func (h *Handler) GetBalance(c echo.Context) error {
 
 	user, err := h.UserRepo.GetUser(ctx, userID)
 	// TODO: not found handling
-	// http.StatusNotFound(404)
+	// http.StatusPreconditionFailed(412)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -480,14 +480,14 @@ func (h *Handler) Purchase(c echo.Context) error {
 
 	user, err := h.UserRepo.GetUser(ctx, userID)
 	// TODO: not found handling
-	// http.StatusNotFound(404)
+	// http.StatusPreconditionFailed(412)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
 	item, err := h.ItemRepo.GetItem(ctx, int32(itemID))
 	// TODO: not found handling
-	// http.StatusNotFound(404)
+	// http.StatusPreconditionFailed(412)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -503,7 +503,7 @@ func (h *Handler) Purchase(c echo.Context) error {
 
 	seller, err := h.UserRepo.GetUser(ctx, sellerID)
 	// TODO: not found handling
-	// http.StatusNotFound(404)
+	// http.StatusPreconditionFailed(412)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
