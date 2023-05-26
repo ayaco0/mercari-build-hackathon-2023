@@ -42,21 +42,21 @@ type registerResponse struct {
 }
 
 type getUserItemsResponse struct {
-	ID           int32  `json:"id"`
+	ID           int64  `json:"id"`
 	Name         string `json:"name"`
 	Price        int64  `json:"price"`
 	CategoryName string `json:"category_name"`
 }
 
 type getOnSaleItemsResponse struct {
-	ID           int32  `json:"id"`
+	ID           int64  `json:"id"`
 	Name         string `json:"name"`
 	Price        int64  `json:"price"`
 	CategoryName string `json:"category_name"`
 }
 
 type getItemResponse struct {
-	ID           int32             `json:"id"`
+	ID           int64             `json:"id"`
 	Name         string            `json:"name"`
 	CategoryID   int64             `json:"category_id"`
 	CategoryName string            `json:"category_name"`
@@ -72,7 +72,7 @@ type getCategoriesResponse struct {
 }
 
 type sellRequest struct {
-	ItemID int32 `json:"item_id"`
+	ItemID int64 `json:"item_id"`
 }
 
 type addItemRequest struct {
@@ -143,6 +143,13 @@ func (h *Handler) Register(c echo.Context) error {
 	if err := c.Bind(req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err)
 	}
+	// 名前またはパスワードが空でないことをチェック
+	if req.Name == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "Name field is required")
+	} 
+	if req.Password == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "Password field is required")
+	} 
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -151,6 +158,10 @@ func (h *Handler) Register(c echo.Context) error {
 
 	userID, err := h.UserRepo.AddUser(c.Request().Context(), domain.User{Name: req.Name, Password: string(hash)})
 	if err != nil {
+		//AddUserで名前の重複チェックを行い、重複がある場合は400を返す
+		if httpErr, isHTTPError := err.(*echo.HTTPError); isHTTPError {
+			return httpErr
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -165,12 +176,19 @@ func (h *Handler) Login(c echo.Context) error {
 	if err := c.Bind(req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err)
 	}
-
+	// 入力値（ID・パスワード）の存在チェック
+    if req.UserID == 0 || req.Password == "" {
+        return echo.NewHTTPError(http.StatusBadRequest, "UserID and password are required")
+    }
+	// ユーザの存在チェック
 	user, err := h.UserRepo.GetUser(ctx, req.UserID)
 	if err != nil {
+		if err == sql.ErrNoRows {
+            return echo.NewHTTPError(http.StatusNotFound, "user not found")
+        }
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-
+	
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
 		if err == bcrypt.ErrMismatchedHashAndPassword {
 			return echo.NewHTTPError(http.StatusUnauthorized, err)
@@ -303,6 +321,9 @@ func (h *Handler) Sell(c echo.Context) error {
 	}
 
 	item, err := h.ItemRepo.GetItem(ctx, req.ItemID)
+	if item.Price < 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid price")
+	}
 	// TODO: not found handling
 	// http.StatusPreconditionFailed(412)
 	if err != nil {
@@ -324,9 +345,10 @@ func (h *Handler) GetOnSaleItems(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	items, err := h.ItemRepo.GetOnSaleItems(ctx)
-	// TODO: not found handling
-	// http.StatusNotFound(404)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "items not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -349,15 +371,16 @@ func (h *Handler) GetOnSaleItems(c echo.Context) error {
 func (h *Handler) GetItem(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	itemID, err := strconv.Atoi(c.Param("itemID"))
+	itemID, err := strconv.ParseInt(c.Param("itemID"), 10, 64)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	item, err := h.ItemRepo.GetItem(ctx, int32(itemID))
-	// TODO: not found handling
-	// http.StatusNotFound(404)
+	item, err := h.ItemRepo.GetItem(ctx, itemID)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "item not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -386,9 +409,10 @@ func (h *Handler) GetUserItems(c echo.Context) error {
 	}
 
 	items, err := h.ItemRepo.GetItemsByUserID(ctx, userID)
-	// TODO: not found handling
-	// http.StatusNotFound(404)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "items not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -412,9 +436,10 @@ func (h *Handler) GetCategories(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	cats, err := h.ItemRepo.GetCategories(ctx)
-	// TODO: not found handling
-	// http.StatusNotFound(404)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "categories not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -430,13 +455,13 @@ func (h *Handler) GetImage(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	// TODO: overflow
-	itemID, err := strconv.Atoi(c.Param("itemID"))
+	itemID, err := strconv.ParseInt(c.Param("itemID"), 10, 64)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "invalid itemID type")
 	}
 
 	// オーバーフローしていると。ここのint32(itemID)がバグって正常に処理ができないはず
-	data, err := h.ItemRepo.GetItemImage(ctx, int32(itemID))
+	data, err := h.ItemRepo.GetItemImage(ctx, itemID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -450,6 +475,8 @@ func (h *Handler) AddBalance(c echo.Context) error {
 	req := new(addBalanceRequest)
 	if err := c.Bind(req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err)
+	} else if req.Balance < 0 {
+		return echo.NewHTTPError(http.StatusBadRequest, "balance must be positive");
 	}
 
 	userID, err := getUserID(c)
@@ -463,7 +490,6 @@ func (h *Handler) AddBalance(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-
 	if err := h.UserRepo.UpdateBalance(ctx, userID, user.Balance+req.Balance); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -498,7 +524,7 @@ func (h *Handler) Purchase(c echo.Context) error {
 	}
 
 	// TODO: overflow
-	itemID, err := strconv.Atoi(c.Param("itemID"))
+	itemID, err := strconv.ParseInt(c.Param("itemID"), 10, 64)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -507,7 +533,7 @@ func (h *Handler) Purchase(c echo.Context) error {
 	// http.StatusPreconditionFailed(412)
 
 	// オーバーフローしていると。ここのint32(itemID)がバグって正常に処理ができないはず
-	if err := h.ItemRepo.UpdateItemStatus(ctx, int32(itemID), domain.ItemStatusSoldOut); err != nil {
+	if err := h.ItemRepo.UpdateItemStatus(ctx, itemID, domain.ItemStatusSoldOut); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -518,7 +544,7 @@ func (h *Handler) Purchase(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	item, err := h.ItemRepo.GetItem(ctx, int32(itemID))
+	item, err := h.ItemRepo.GetItem(ctx, itemID)
 	// TODO: not found handling
 	// http.StatusPreconditionFailed(412)
 	if err != nil {
