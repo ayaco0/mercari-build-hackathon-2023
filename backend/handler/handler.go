@@ -9,7 +9,10 @@ import (
 	"os"
 	"strconv"
 	"time"
+	"context"
+	"strings"
 
+    "github.com/sashabaranov/go-openai"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 	"github.com/ayaco0/mecari-build-hackathon-2023/backend/db"
@@ -103,6 +106,10 @@ type loginResponse struct {
 	ID    int64  `json:"id"`
 	Name  string `json:"name"`
 	Token string `json:"token"`
+}
+
+type CategoryResponse struct {
+	Category string `json:"category"`
 }
 
 type Handler struct {
@@ -530,4 +537,69 @@ func getEnv(key string, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+func extractCategory(response string, categories []string) string {
+	response = strings.ToLower(response)
+
+	// カテゴリ名の抽出
+	for _, category := range categories {
+		if strings.Contains(response, category) {
+			return category
+		}
+	}
+
+	// 該当するカテゴリがない場合
+	return "category not found"
+}
+
+func (h *Handler) CategorizeText(ctx context.Context, text string) (string, error) {
+    // OpenAI クライアントを作成
+    client := openai.NewClient("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")
+	msgs := []openai.ChatCompletionMessage{}
+	
+	// カテゴリ一覧を取得
+	cats, err := h.ItemRepo.GetCategories(ctx)
+	categories := make([]string, len(cats))
+	for i, cat := range cats {
+		categories[i] = cat.Name
+	}
+	fmt.Println(categories)
+	categoryString := strings.Join(categories, ", ")
+	fmt.Println(categoryString)
+
+	// promptを作成
+	text = "商品カテゴリ名一覧は"+categoryString+"です。以下の商品説明文から商品のカテゴリ名を推定してください。"+text
+	msgs = append(msgs, openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: text})
+    
+	// GPT-3.5 モデルに対してリクエストを送信
+	resp, err := client.CreateChatCompletion(
+		ctx,
+		openai.ChatCompletionRequest{Model: openai.GPT3Dot5Turbo, Messages: msgs},
+	)
+    if err != nil {
+        return "", err
+    }
+
+    // レスポンスから推定されたカテゴリを取得
+    response := resp.Choices[0].Message.Content
+	category := extractCategory(response, categories)
+
+    return category, nil
+}
+
+func (h *Handler) SuggestCategory(c echo.Context) error {
+	ctx := c.Request().Context()
+	text := c.QueryParam("text")
+
+	category, err := h.CategorizeText(ctx, text)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, err)
+	}
+
+	res := CategoryResponse{
+		Category: category,
+	}
+
+	return c.JSON(http.StatusOK, res)
 }
