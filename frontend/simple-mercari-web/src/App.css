@@ -18,7 +18,16 @@ body {
   -webkit-box-flex: 1;
   flex: 1 1 0%;
   padding: 16px;
-  color: black;
+  color: #575757;
+  width: 300px;
+}
+
+#MerTextInput2 {
+  display: block;
+  -webkit-box-flex: 1;
+  flex: 1 1 0%;
+  padding: 16px;
+  color: white;
   width: 300px;
 }
 
@@ -32,7 +41,7 @@ body {
 
 #MerButton {
   /* color: var(--alias-color-text-inverse-default); */
-  background-color: #da3e50;
+  background-color: gray;
   color: #222427;
   font: inherit;
   transition-timing-function: ease-in-out;
@@ -116,6 +125,11 @@ body {
   justify-content: left;
   font-size: calc(10px + 1vmin);
   color: white;
+}
+
+.wrapper {
+  display: grid;
+  grid-template-columns: 5px 5px 5px;
 }
 
 .ListingForm {

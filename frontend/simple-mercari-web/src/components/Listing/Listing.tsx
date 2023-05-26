@@ -130,9 +130,13 @@ export const Listing: React.FC = () => {
             <select
               name="category_id"
               id="MerTextInput"
-              value={values.category_id}
+              // value={values.category_id}
               onChange={onSelectChange}
             >
+           
+                <option value=""disabled selected>category (選択してください)</option>
+            
+
               {categories &&
                 categories.map((category) => {
                   return <option value={category.id}>{category.name}</option>;
@@ -157,7 +161,7 @@ export const Listing: React.FC = () => {
             <input
               type="file"
               name="image"
-              id="MerTextInput"
+              id="MerTextInput2"
               onChange={onFileChange}
               required
             />
@@ -169,4 +173,5 @@ export const Listing: React.FC = () => {
       </div>
     </MerComponent>
   );
+
 };
