@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
-	"github.com/mercari-build/mecari-build-hackathon-2023/backend/domain"
+	"github.com/ayaco0/mecari-build-hackathon-2023/backend/domain"
 )
 
 type UserRepository interface {
