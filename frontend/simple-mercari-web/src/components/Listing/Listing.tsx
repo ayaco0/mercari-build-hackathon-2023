@@ -28,6 +28,7 @@ export const Listing: React.FC = () => {
   const [values, setValues] = useState<formDataType>(initialState);
   const [categories, setCategories] = useState<Category[]>([]);
   const [cookies] = useCookies(["token", "userID"]);
+  const [suggestedCategory, setSuggestedCategory] = useState<string>("");
 
   const onValueChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setValues({
@@ -110,6 +111,25 @@ export const Listing: React.FC = () => {
       });
   };
 
+  const suggestCategory = () => {
+    // 「Suggest category」ボタンがクリックされたときに実行される関数
+    const text = values.name;
+  
+    // クエリパラメータを含んだURLを作成
+    const url = `http://127.0.0.1:9000/suggest?text=${encodeURIComponent(text)}`;
+  
+    // バックエンドのAPIを呼び出してカテゴリを取得
+    fetch(url)
+      .then((response) => response.json())
+      .then((data) => {
+        setSuggestedCategory(data.category);
+      })
+      .catch((error) => {
+        toast.error("Failed to suggest category");
+        console.error("GET error:", error);
+      });
+  };
+
   useEffect(() => {
     fetchCategories();
   }, []);
@@ -127,6 +147,10 @@ export const Listing: React.FC = () => {
               onChange={onValueChange}
               required
             />
+            <button type="button" onClick={suggestCategory} id="MerButton">
+              Suggest category
+            </button>
+            <p>Suggested Category: {suggestedCategory}</p>
             <select
               name="category_id"
               id="MerTextInput"
