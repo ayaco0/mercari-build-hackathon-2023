@@ -555,7 +555,7 @@ func extractCategory(response string, categories []string) string {
 
 func (h *Handler) CategorizeText(ctx context.Context, text string) (string, error) {
     // OpenAI クライアントを作成
-    client := openai.NewClient("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")
+    client := openai.NewClient("YOUR-API-KEY")
 	msgs := []openai.ChatCompletionMessage{}
 	
 	// カテゴリ一覧を取得
