@@ -76,6 +76,7 @@ type getCategoriesResponse struct {
 
 type sellRequest struct {
 	ItemID int64 `json:"item_id"`
+	UserID   int64  `json:"user_id"`
 }
 
 type addItemRequest struct {
@@ -336,10 +337,11 @@ func (h *Handler) Sell(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	// 自分で出品した商品は購入できないようにする
-	if req.UserID == item.UserID {
-		return echo.NewHTTPError(http.StatusPreconditionFailed, "Cannot purchase your own item")
+	// リクエストユーザと商品のユーザが一致するかチェック
+	if req.UserID != item.UserID {
+		return echo.NewHTTPError(http.StatusPreconditionFailed, "Cannot sell this item")
 	}
+
 	// 商品ステータスがinitialの場合のみ更新
 	if item.Status != domain.ItemStatusInitial {
 		return echo.NewHTTPError(http.StatusPreconditionFailed, "Item is not in initial status")
