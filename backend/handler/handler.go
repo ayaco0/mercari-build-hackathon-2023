@@ -327,16 +327,24 @@ func (h *Handler) Sell(c echo.Context) error {
 	if item.Price < 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid price")
 	}
-	// TODO: not found handling
-	// http.StatusPreconditionFailed(412)
+
 	if err != nil {
+		// 商品が見つからない場合
+		if errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusPreconditionFailed, "Item not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	// TODO: check req.UserID and item.UserID
-	// http.StatusPreconditionFailed(412)
-	// TODO: only update when status is initial
-	// http.StatusPreconditionFailed(412)
+	// 自分で出品した商品は購入できないようにする
+	if req.UserID == item.UserID {
+		return echo.NewHTTPError(http.StatusPreconditionFailed, "Cannot purchase your own item")
+	}
+	// 商品ステータスがinitialの場合のみ更新
+	if item.Status != domain.ItemStatusInitial {
+		return echo.NewHTTPError(http.StatusPreconditionFailed, "Item is not in initial status")
+	}
+
 	if err := h.ItemRepo.UpdateItemStatus(ctx, item.ID, domain.ItemStatusOnSale); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
