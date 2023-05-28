@@ -99,9 +99,13 @@ export const ItemDetail = () => {
               src={URL.createObjectURL(itemImage)}
               alt="item"
               onClick={() => navigate(`/item/${item.id}`)}
+              
             />
             <p>
-              <span>Item Name: {item.name}</span>
+              <span className={item.status === ItemStatus.ItemStatusSoldOut ? "soldOut" : ""}>
+                Item Name: {item.name}
+                {item.status === ItemStatus.ItemStatusSoldOut && " (SoldOut)"}
+              </span>
               <br />
               <span>Price: {item.price}</span>
               <br />
@@ -124,6 +128,7 @@ export const ItemDetail = () => {
         )}
       </MerComponent>
     </div>
+    
   );
 };
 
