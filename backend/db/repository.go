@@ -82,6 +82,7 @@ type ItemRepository interface {
 	GetCategory(ctx context.Context, id int64) (domain.Category, error)
 	GetCategories(ctx context.Context) ([]domain.Category, error)
 	UpdateItemStatus(ctx context.Context, id int64, status domain.ItemStatus) error
+	SearchItem(ctx context.Context, word string) ([]domain.Item, error)
 }
 
 type ItemDBRepository struct {
@@ -103,8 +104,7 @@ func (r *ItemDBRepository) AddItem(ctx context.Context, item domain.Item) (domai
 	// 商品の追加
 	if _, err := r.ExecContext(ctx, "INSERT INTO items (name, price, description, category_id, seller_id, image, status) VALUES (?, ?, ?, ?, ?, ?, ?)", item.Name, item.Price, item.Description, item.CategoryID, item.UserID, item.Image, item.Status); err != nil {
 		// http.StatusConflict(409) 既に同じIDがあった場合
-		sqliteErr, ok := err.(sqlite3.Error)
-		if ok && sqliteErr.Code == sqlite3.ErrConstraint && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
+		if err.Error() == "UNIQUE constraint failed: items.id" {
 			return domain.Item{}, echo.NewHTTPError(http.StatusConflict, "ID is already taken")
 		}
 		return domain.Item{}, err
@@ -213,4 +213,25 @@ func (r *ItemDBRepository) GetCategories(ctx context.Context) ([]domain.Category
 		return nil, err
 	}
 	return cats, nil
+}
+
+func (r *ItemDBRepository) SearchItem(ctx context.Context, word string) ([]domain.Item, error) {
+	rows, err := r.QueryContext(ctx, "SELECT * FROM items WHERE name LIKE '%'||?||'%'", word)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []domain.Item
+	for rows.Next() {
+		var item domain.Item
+		if err := rows.Scan(&item.ID, &item.Name, &item.Price, &item.Description, &item.CategoryID, &item.UserID, &item.Image, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
