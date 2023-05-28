@@ -570,7 +570,11 @@ func (h *Handler) Purchase(c echo.Context) error {
 
 	// TODO: if it is fail here, item status is still sold
 	// TODO: balance consistency
-	// TODO: not to buy own items. 自身の商品を買おうとしていたら、http.StatusPreconditionFailed(412)
+	// 自分の出品した商品は購入できないようにする
+	if userID == item.UserID {
+		return echo.NewHTTPError(http.StatusPreconditionFailed, "Cannot purchase your own item")
+	}
+
 	if err := h.UserRepo.UpdateBalance(ctx, userID, user.Balance-item.Price); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
