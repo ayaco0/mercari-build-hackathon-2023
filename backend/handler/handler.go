@@ -327,12 +327,9 @@ func (h *Handler) Sell(c echo.Context) error {
 	if item.Price < 0 {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid price")
 	}
-
+	// TODO: not found handling
+	// http.StatusPreconditionFailed(412)
 	if err != nil {
-		// 商品が見つからない場合
-		if errors.Is(err, sql.ErrNoRows) {
-			return echo.NewHTTPError(http.StatusPreconditionFailed, "Item not found")
-		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
