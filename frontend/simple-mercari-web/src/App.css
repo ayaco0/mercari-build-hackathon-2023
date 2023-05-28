@@ -72,7 +72,7 @@ body {
 
 #MerDisableButton {
   /* color: var(--alias-color-text-inverse-default); */
-  background-color: #575757;
+  background-color: red;
   color: #222427;
   font: inherit;
   transition-timing-function: ease-in-out;
@@ -154,4 +154,8 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: left;
+}
+
+.soldOut {
+  color: red;
 }
