@@ -218,6 +218,43 @@ func (h *Handler) Login(c echo.Context) error {
 	})
 }
 
+func (h *Handler) Search(c echo.Context) error {
+	ctx := c.Request().Context()
+	word := c.QueryParam("name")
+
+	items, err := h.ItemRepo.SearchItem(ctx, word)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusNotFound, "items not found")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	var res []getItemResponse
+	for _, item := range items {
+		cats, err := h.ItemRepo.GetCategories(ctx)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, err)
+		}
+		for _, cat := range cats {
+			if cat.ID == item.CategoryID {
+				res = append(res, getItemResponse{
+					ID:           item.ID,
+					Name:         item.Name,
+					CategoryID:   item.CategoryID,
+					CategoryName: cat.Name,
+					UserID:       item.UserID,
+					Price:        item.Price,
+					Description:  item.Description,
+					Status:       item.Status,
+				})
+			}
+		}
+	}
+
+	return c.JSON(http.StatusOK, res)
+}
+
 func (h *Handler) AddItem(c echo.Context) error {
 	// TODO: validation
 	// http.StatusBadRequest(400)
@@ -253,7 +290,7 @@ func (h *Handler) AddItem(c echo.Context) error {
 
 	_, err = h.ItemRepo.GetCategory(ctx, req.CategoryID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid categoryID")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
