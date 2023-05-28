@@ -76,7 +76,6 @@ type getCategoriesResponse struct {
 
 type sellRequest struct {
 	ItemID int64 `json:"item_id"`
-	UserID   int64  `json:"user_id"`
 }
 
 type addItemRequest struct {
@@ -337,10 +336,8 @@ func (h *Handler) Sell(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	// リクエストユーザと商品のユーザが一致するかチェック
-	if req.UserID != item.UserID {
-		return echo.NewHTTPError(http.StatusPreconditionFailed, "Cannot sell this item")
-	}
+	// TODO: check req.UserID and item.UserID
+	// http.StatusPreconditionFailed(412)
 
 	// 商品ステータスがinitialの場合のみ更新
 	if item.Status != domain.ItemStatusInitial {
@@ -472,7 +469,6 @@ func (h *Handler) GetImage(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, "invalid itemID type")
 	}
 
-	// オーバーフローしていると。ここのint32(itemID)がバグって正常に処理ができないはず
 	data, err := h.ItemRepo.GetItemImage(ctx, itemID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
@@ -547,7 +543,6 @@ func (h *Handler) Purchase(c echo.Context) error {
 	// TODO: update only when item status is on sale
 	// http.StatusPreconditionFailed(412)
 
-	// オーバーフローしていると。ここのint32(itemID)がバグって正常に処理ができないはず
 	if err := h.ItemRepo.UpdateItemStatus(ctx, itemID, domain.ItemStatusSoldOut); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
