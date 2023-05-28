@@ -24,6 +24,13 @@ func NewUserRepository(db *sql.DB) UserRepository {
 }
 
 func (r *UserDBRepository) AddUser(ctx context.Context, user domain.User) (int64, error) {
+	// トランザクションの開始
+	tx, err := r.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
     // 名前の重複チェック
     var nameCount int
     if err := r.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE name = ?", user.Name).Scan(&nameCount); err != nil {
@@ -35,11 +42,18 @@ func (r *UserDBRepository) AddUser(ctx context.Context, user domain.User) (int64
 
 	//重複がない場合はユーザを追加
 	if _, err := r.ExecContext(ctx, "INSERT INTO users (name, password) VALUES (?, ?)", user.Name, user.Password); err != nil {
+		if err.Error() == "UNIQUE constraint failed: users.id" {
+			return 0, echo.NewHTTPError(http.StatusConflict, "ID is already taken")
+		}
 		return 0, err
 	}
-	// TODO: if other insert query is executed at the same time, it might return wrong id
 	// http.StatusConflict(409) 既に同じIDがあった場合
 	row := r.QueryRowContext(ctx, "SELECT id FROM users WHERE rowid = LAST_INSERT_ROWID()")
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
 
 	var id int64
 	return id, row.Scan(&id)
@@ -80,15 +94,35 @@ func NewItemRepository(db *sql.DB) ItemRepository {
 }
 
 func (r *ItemDBRepository) AddItem(ctx context.Context, item domain.Item) (domain.Item, error) {
-	if _, err := r.ExecContext(ctx, "INSERT INTO items (name, price, description, category_id, seller_id, image, status) VALUES (?, ?, ?, ?, ?, ?, ?)", item.Name, item.Price, item.Description, item.CategoryID, item.UserID, item.Image, item.Status); err != nil {
+	// トランザクション開始
+	tx, err := r.BeginTx(ctx, nil)
+	if err != nil {
 		return domain.Item{}, err
 	}
-	// TODO: if other insert query is executed at the same time, it might return wrong id
-	// http.StatusConflict(409) 既に同じIDがあった場合
+	defer tx.Rollback()
+
+	// 商品の追加
+	if _, err := r.ExecContext(ctx, "INSERT INTO items (name, price, description, category_id, seller_id, image, status) VALUES (?, ?, ?, ?, ?, ?, ?)", item.Name, item.Price, item.Description, item.CategoryID, item.UserID, item.Image, item.Status); err != nil {
+		// http.StatusConflict(409) 既に同じIDがあった場合
+		if err.Error() == "UNIQUE constraint failed: items.id" {
+			return domain.Item{}, echo.NewHTTPError(http.StatusConflict, "ID is already taken")
+		}
+		return domain.Item{}, err
+	}
+	
 	row := r.QueryRowContext(ctx, "SELECT * FROM items WHERE rowid = LAST_INSERT_ROWID()")
 
 	var res domain.Item
-	return res, row.Scan(&res.ID, &res.Name, &res.Price, &res.Description, &res.CategoryID, &res.UserID, &res.Image, &res.Status, &res.CreatedAt, &res.UpdatedAt)
+	if err := row.Scan(&res.ID, &res.Name, &res.Price, &res.Description, &res.CategoryID, &res.UserID, &res.Image, &res.Status, &res.CreatedAt, &res.UpdatedAt); err != nil {
+		return domain.Item{}, err
+	}
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		return domain.Item{}, err
+	}
+
+	return res, nil
 }
 
 func (r *ItemDBRepository) GetItem(ctx context.Context, id int64) (domain.Item, error) {
