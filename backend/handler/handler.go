@@ -560,9 +560,11 @@ func (h *Handler) Purchase(c echo.Context) error {
 	}
 
 	item, err := h.ItemRepo.GetItem(ctx, itemID)
-	// TODO: not found handling
-	// http.StatusPreconditionFailed(412)
 	if err != nil {
+		// 商品が見つからない場合
+		if errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusPreconditionFailed, "Item not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
