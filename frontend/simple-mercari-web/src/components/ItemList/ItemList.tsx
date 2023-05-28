@@ -35,9 +35,10 @@ export const ItemList: React.FC<Prop> = (props) => {
       {itemChunks.map((chunk, index) => (
         <div key={index} style={{ display: "flex" }}>
           {chunk.map((item, itemIndex) => (
-            <div key={item.id} style={{ marginRight: "20px" }}>
-              <Item item={item} />
-            </div>
+             <div key={item.id} style={{ marginRight: "20px" }}>
+             <Item item={item} />
+             {item.status === "SoldOut" && <span style={{ color: "red" }}>SoldOut</span>}
+           </div>
           ))}
         </div>
       ))}

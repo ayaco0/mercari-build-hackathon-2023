@@ -7,6 +7,7 @@ import { fetcher } from "../../helper";
 interface Category {
   id: number;
   name: string;
+  soldOut: boolean;
 }
 
 type formDataType = {
@@ -103,7 +104,13 @@ export const Listing: React.FC = () => {
         Accept: "application/json",
       },
     })
-      .then((items) => setCategories(items))
+      .then((items) => {
+        const updatedCategories = items.map((category) => ({
+          ...category,
+          soldOut: category.name === "SoldOut", 
+        }));
+        setCategories(updatedCategories);
+      })
       .catch((err) => {
         console.log(`GET error:`, err);
         toast.error(err.message);
@@ -134,13 +141,20 @@ export const Listing: React.FC = () => {
               onChange={onSelectChange}
             >
            
-                <option value=""disabled selected>category (選択してください)</option>
+              <option value=""disabled selected>category (選択してください)</option>
             
 
               {categories &&
-                categories.map((category) => {
-                  return <option value={category.id}>{category.name}</option>;
-                })}
+                categories.map((category) => (
+                  //return <option value={category.id}
+                  <option
+                  value={category.id}
+                  key={category.id}
+                  disabled={category.soldOut}
+                  >
+                  {category.name} {category.soldOut && "(SoldOut)"}
+                  </option>
+                ))}
             </select>
             <input
               type="number"
