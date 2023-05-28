@@ -24,6 +24,13 @@ func NewUserRepository(db *sql.DB) UserRepository {
 }
 
 func (r *UserDBRepository) AddUser(ctx context.Context, user domain.User) (int64, error) {
+	// トランザクションの開始
+	tx, err := r.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
     // 名前の重複チェック
     var nameCount int
     if err := r.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE name = ?", user.Name).Scan(&nameCount); err != nil {
@@ -35,11 +42,18 @@ func (r *UserDBRepository) AddUser(ctx context.Context, user domain.User) (int64
 
 	//重複がない場合はユーザを追加
 	if _, err := r.ExecContext(ctx, "INSERT INTO users (name, password) VALUES (?, ?)", user.Name, user.Password); err != nil {
+		if err.Error() == "UNIQUE constraint failed: users.id" {
+			return 0, echo.NewHTTPError(http.StatusConflict, "ID is already taken")
+		}
 		return 0, err
 	}
-	// TODO: if other insert query is executed at the same time, it might return wrong id
 	// http.StatusConflict(409) 既に同じIDがあった場合
 	row := r.QueryRowContext(ctx, "SELECT id FROM users WHERE rowid = LAST_INSERT_ROWID()")
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
 
 	var id int64
 	return id, row.Scan(&id)
