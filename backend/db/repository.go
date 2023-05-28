@@ -82,7 +82,6 @@ type ItemRepository interface {
 	GetCategory(ctx context.Context, id int64) (domain.Category, error)
 	GetCategories(ctx context.Context) ([]domain.Category, error)
 	UpdateItemStatus(ctx context.Context, id int64, status domain.ItemStatus) error
-	SearchItem(ctx context.Context, word string) ([]domain.Item, error)
 }
 
 type ItemDBRepository struct {
@@ -94,15 +93,36 @@ func NewItemRepository(db *sql.DB) ItemRepository {
 }
 
 func (r *ItemDBRepository) AddItem(ctx context.Context, item domain.Item) (domain.Item, error) {
-	if _, err := r.ExecContext(ctx, "INSERT INTO items (name, price, description, category_id, seller_id, image, status) VALUES (?, ?, ?, ?, ?, ?, ?)", item.Name, item.Price, item.Description, item.CategoryID, item.UserID, item.Image, item.Status); err != nil {
+	// トランザクション開始
+	tx, err := r.BeginTx(ctx, nil)
+	if err != nil {
 		return domain.Item{}, err
 	}
-	// TODO: if other insert query is executed at the same time, it might return wrong id
-	// http.StatusConflict(409) 既に同じIDがあった場合
+	defer tx.Rollback()
+
+	// 商品の追加
+	if _, err := r.ExecContext(ctx, "INSERT INTO items (name, price, description, category_id, seller_id, image, status) VALUES (?, ?, ?, ?, ?, ?, ?)", item.Name, item.Price, item.Description, item.CategoryID, item.UserID, item.Image, item.Status); err != nil {
+		// http.StatusConflict(409) 既に同じIDがあった場合
+		sqliteErr, ok := err.(sqlite3.Error)
+		if ok && sqliteErr.Code == sqlite3.ErrConstraint && sqliteErr.ExtendedCode == sqlite3.ErrConstraintUnique {
+			return domain.Item{}, echo.NewHTTPError(http.StatusConflict, "ID is already taken")
+		}
+		return domain.Item{}, err
+	}
+	
 	row := r.QueryRowContext(ctx, "SELECT * FROM items WHERE rowid = LAST_INSERT_ROWID()")
 
 	var res domain.Item
-	return res, row.Scan(&res.ID, &res.Name, &res.Price, &res.Description, &res.CategoryID, &res.UserID, &res.Image, &res.Status, &res.CreatedAt, &res.UpdatedAt)
+	if err := row.Scan(&res.ID, &res.Name, &res.Price, &res.Description, &res.CategoryID, &res.UserID, &res.Image, &res.Status, &res.CreatedAt, &res.UpdatedAt); err != nil {
+		return domain.Item{}, err
+	}
+
+	// トランザクションのコミット
+	if err := tx.Commit(); err != nil {
+		return domain.Item{}, err
+	}
+
+	return res, nil
 }
 
 func (r *ItemDBRepository) GetItem(ctx context.Context, id int64) (domain.Item, error) {
@@ -193,25 +213,4 @@ func (r *ItemDBRepository) GetCategories(ctx context.Context) ([]domain.Category
 		return nil, err
 	}
 	return cats, nil
-}
-
-func (r *ItemDBRepository) SearchItem(ctx context.Context, word string) ([]domain.Item, error) {
-	rows, err := r.QueryContext(ctx, "SELECT * FROM items WHERE name LIKE '%'||?||'%'", word)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var items []domain.Item
-	for rows.Next() {
-		var item domain.Item
-		if err := rows.Scan(&item.ID, &item.Name, &item.Price, &item.Description, &item.CategoryID, &item.UserID, &item.Image, &item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
