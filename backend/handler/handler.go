@@ -9,6 +9,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+	"context"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
@@ -16,6 +18,7 @@ import (
 	"github.com/ayaco0/mecari-build-hackathon-2023/backend/domain"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
+	"github.com/sashabaranov/go-openai"
 )
 
 var (
@@ -42,21 +45,21 @@ type registerResponse struct {
 }
 
 type getUserItemsResponse struct {
-	ID           int32  `json:"id"`
+	ID           int64  `json:"id"`
 	Name         string `json:"name"`
 	Price        int64  `json:"price"`
 	CategoryName string `json:"category_name"`
 }
 
 type getOnSaleItemsResponse struct {
-	ID           int32  `json:"id"`
+	ID           int64  `json:"id"`
 	Name         string `json:"name"`
 	Price        int64  `json:"price"`
 	CategoryName string `json:"category_name"`
 }
 
 type getItemResponse struct {
-	ID           int32             `json:"id"`
+	ID           int64             `json:"id"`
 	Name         string            `json:"name"`
 	CategoryID   int64             `json:"category_id"`
 	CategoryName string            `json:"category_name"`
@@ -72,7 +75,7 @@ type getCategoriesResponse struct {
 }
 
 type sellRequest struct {
-	ItemID int32 `json:"item_id"`
+	ItemID int64 `json:"item_id"`
 }
 
 type addItemRequest struct {
@@ -103,6 +106,10 @@ type loginResponse struct {
 	ID    int64  `json:"id"`
 	Name  string `json:"name"`
 	Token string `json:"token"`
+}
+
+type CategoryResponse struct {
+	Category string `json:"category"`
 }
 
 type Handler struct {
@@ -137,12 +144,17 @@ func (h *Handler) AccessLog(c echo.Context) error {
 }
 
 func (h *Handler) Register(c echo.Context) error {
-	// TODO: validation
-	// http.StatusBadRequest(400)
 	req := new(registerRequest)
 	if err := c.Bind(req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err)
 	}
+	// 名前またはパスワードが空でないことをチェック
+	if req.Name == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "Name field is required")
+	} 
+	if req.Password == "" {
+		return echo.NewHTTPError(http.StatusBadRequest, "Password field is required")
+	} 
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -151,6 +163,10 @@ func (h *Handler) Register(c echo.Context) error {
 
 	userID, err := h.UserRepo.AddUser(c.Request().Context(), domain.User{Name: req.Name, Password: string(hash)})
 	if err != nil {
+		//AddUserで名前の重複チェックを行い、重複がある場合は400を返す
+		if httpErr, isHTTPError := err.(*echo.HTTPError); isHTTPError {
+			return httpErr
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -159,18 +175,23 @@ func (h *Handler) Register(c echo.Context) error {
 
 func (h *Handler) Login(c echo.Context) error {
 	ctx := c.Request().Context()
-	// TODO: validation
-	// http.StatusBadRequest(400)
 	req := new(loginRequest)
 	if err := c.Bind(req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err)
 	}
-
+	// 入力値（ID・パスワード）の存在チェック
+    if req.UserID == 0 || req.Password == "" {
+        return echo.NewHTTPError(http.StatusBadRequest, "UserID and password are required")
+    }
+	// ユーザの存在チェック
 	user, err := h.UserRepo.GetUser(ctx, req.UserID)
 	if err != nil {
+		if err == sql.ErrNoRows {
+            return echo.NewHTTPError(http.StatusNotFound, "user not found")
+        }
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-
+	
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.Password)); err != nil {
 		if err == bcrypt.ErrMismatchedHashAndPassword {
 			return echo.NewHTTPError(http.StatusUnauthorized, err)
@@ -198,6 +219,43 @@ func (h *Handler) Login(c echo.Context) error {
 		Name:  user.Name,
 		Token: encodedToken,
 	})
+}
+
+func (h *Handler) Search(c echo.Context) error {
+	ctx := c.Request().Context()
+	word := c.QueryParam("name")
+
+	items, err := h.ItemRepo.SearchItem(ctx, word)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusNotFound, "items not found")
+		}
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	var res []getItemResponse
+	for _, item := range items {
+		cats, err := h.ItemRepo.GetCategories(ctx)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, err)
+		}
+		for _, cat := range cats {
+			if cat.ID == item.CategoryID {
+				res = append(res, getItemResponse{
+					ID:           item.ID,
+					Name:         item.Name,
+					CategoryID:   item.CategoryID,
+					CategoryName: cat.Name,
+					UserID:       item.UserID,
+					Price:        item.Price,
+					Description:  item.Description,
+					Status:       item.Status,
+				})
+			}
+		}
+	}
+
+	return c.JSON(http.StatusOK, res)
 }
 
 func (h *Handler) AddItem(c echo.Context) error {
@@ -235,7 +293,7 @@ func (h *Handler) AddItem(c echo.Context) error {
 
 	_, err = h.ItemRepo.GetCategory(ctx, req.CategoryID)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return echo.NewHTTPError(http.StatusBadRequest, "invalid categoryID")
 		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
@@ -290,9 +348,10 @@ func (h *Handler) GetOnSaleItems(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	items, err := h.ItemRepo.GetOnSaleItems(ctx)
-	// TODO: not found handling
-	// http.StatusNotFound(404)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "items not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -315,15 +374,16 @@ func (h *Handler) GetOnSaleItems(c echo.Context) error {
 func (h *Handler) GetItem(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	itemID, err := strconv.Atoi(c.Param("itemID"))
+	itemID, err := strconv.ParseInt(c.Param("itemID"), 10, 64)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	item, err := h.ItemRepo.GetItem(ctx, int32(itemID))
-	// TODO: not found handling
-	// http.StatusNotFound(404)
+	item, err := h.ItemRepo.GetItem(ctx, itemID)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "item not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -352,9 +412,10 @@ func (h *Handler) GetUserItems(c echo.Context) error {
 	}
 
 	items, err := h.ItemRepo.GetItemsByUserID(ctx, userID)
-	// TODO: not found handling
-	// http.StatusNotFound(404)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "items not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -378,9 +439,10 @@ func (h *Handler) GetCategories(c echo.Context) error {
 	ctx := c.Request().Context()
 
 	cats, err := h.ItemRepo.GetCategories(ctx)
-	// TODO: not found handling
-	// http.StatusNotFound(404)
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return echo.NewHTTPError(http.StatusNotFound, "categories not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -395,14 +457,13 @@ func (h *Handler) GetCategories(c echo.Context) error {
 func (h *Handler) GetImage(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	// TODO: overflow
-	itemID, err := strconv.Atoi(c.Param("itemID"))
+	itemID, err := strconv.ParseInt(c.Param("itemID"), 10, 64)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "invalid itemID type")
 	}
 
 	// オーバーフローしていると。ここのint32(itemID)がバグって正常に処理ができないはず
-	data, err := h.ItemRepo.GetItemImage(ctx, int32(itemID))
+	data, err := h.ItemRepo.GetItemImage(ctx, itemID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -464,8 +525,7 @@ func (h *Handler) Purchase(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, err)
 	}
 
-	// TODO: overflow
-	itemID, err := strconv.Atoi(c.Param("itemID"))
+	itemID, err := strconv.ParseInt(c.Param("itemID"), 10, 64)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -474,7 +534,7 @@ func (h *Handler) Purchase(c echo.Context) error {
 	// http.StatusPreconditionFailed(412)
 
 	// オーバーフローしていると。ここのint32(itemID)がバグって正常に処理ができないはず
-	if err := h.ItemRepo.UpdateItemStatus(ctx, int32(itemID), domain.ItemStatusSoldOut); err != nil {
+	if err := h.ItemRepo.UpdateItemStatus(ctx, itemID, domain.ItemStatusSoldOut); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -485,7 +545,7 @@ func (h *Handler) Purchase(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	item, err := h.ItemRepo.GetItem(ctx, int32(itemID))
+	item, err := h.ItemRepo.GetItem(ctx, itemID)
 	// TODO: not found handling
 	// http.StatusPreconditionFailed(412)
 	if err != nil {
@@ -534,4 +594,69 @@ func getEnv(key string, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+func extractCategory(response string, categories []string) string {
+	response = strings.ToLower(response)
+
+	// カテゴリ名の抽出
+	for _, category := range categories {
+		if strings.Contains(response, category) {
+			return category
+		}
+	}
+
+	// 該当するカテゴリがない場合
+	return "category not found"
+}
+
+func (h *Handler) CategorizeText(ctx context.Context, text string) (string, error) {
+    // OpenAI クライアントを作成
+    client := openai.NewClient("YOUR_API_KEY")
+	msgs := []openai.ChatCompletionMessage{}
+	
+	// カテゴリ一覧を取得
+	cats, err := h.ItemRepo.GetCategories(ctx)
+	categories := make([]string, len(cats))
+	for i, cat := range cats {
+		categories[i] = cat.Name
+	}
+	fmt.Println(categories)
+	categoryString := strings.Join(categories, ", ")
+	fmt.Println(categoryString)
+
+	// promptを作成
+	text = "商品カテゴリ名一覧は"+categoryString+"です。以下の商品説明文から商品のカテゴリ名を推定してください。"+text
+	msgs = append(msgs, openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: text})
+    
+	// GPT-3.5 モデルに対してリクエストを送信
+	resp, err := client.CreateChatCompletion(
+		ctx,
+		openai.ChatCompletionRequest{Model: openai.GPT3Dot5Turbo, Messages: msgs},
+	)
+    if err != nil {
+        return "", err
+    }
+
+    // レスポンスから推定されたカテゴリを取得
+    response := resp.Choices[0].Message.Content
+	category := extractCategory(response, categories)
+
+    return category, nil
+}
+
+func (h *Handler) SuggestCategory(c echo.Context) error {
+	ctx := c.Request().Context()
+	text := c.QueryParam("text")
+
+	category, err := h.CategorizeText(ctx, text)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, err)
+	}
+
+	res := CategoryResponse{
+		Category: category,
+	}
+
+	return c.JSON(http.StatusOK, res)
 }
