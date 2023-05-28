@@ -338,12 +338,8 @@ func (h *Handler) Sell(c echo.Context) error {
 
 	// TODO: check req.UserID and item.UserID
 	// http.StatusPreconditionFailed(412)
-
-	// 商品ステータスがinitialの場合のみ更新
-	if item.Status != domain.ItemStatusInitial {
-		return echo.NewHTTPError(http.StatusPreconditionFailed, "Item is not in initial status")
-	}
-
+	// TODO: only update when status is initial
+	// http.StatusPreconditionFailed(412)
 	if err := h.ItemRepo.UpdateItemStatus(ctx, item.ID, domain.ItemStatusOnSale); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
