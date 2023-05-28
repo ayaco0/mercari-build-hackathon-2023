@@ -520,9 +520,11 @@ func (h *Handler) GetBalance(c echo.Context) error {
 	}
 
 	user, err := h.UserRepo.GetUser(ctx, userID)
-	// TODO: not found handling
-	// http.StatusPreconditionFailed(412)
 	if err != nil {
+		// ユーザが見つからない場合
+		if errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusPreconditionFailed, "User not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -569,12 +571,14 @@ func (h *Handler) Purchase(c echo.Context) error {
 	}
 
 	// TODO: if it is fail here, item status is still sold
-	// TODO: balance consistency
 	// 自分の出品した商品は購入できないようにする
 	if userID == item.UserID {
 		return echo.NewHTTPError(http.StatusPreconditionFailed, "Cannot purchase your own item")
 	}
-
+	// 商品価格が残高を超える場合は購入できないようにする
+	if item.Price > user.Balance {
+		return echo.NewHTTPError(http.StatusPreconditionFailed, "Insufficient balance")
+	}
 	if err := h.UserRepo.UpdateBalance(ctx, userID, user.Balance-item.Price); err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -582,9 +586,11 @@ func (h *Handler) Purchase(c echo.Context) error {
 	sellerID := item.UserID
 
 	seller, err := h.UserRepo.GetUser(ctx, sellerID)
-	// TODO: not found handling
-	// http.StatusPreconditionFailed(412)
 	if err != nil {
+		// 出品者が見つからない場合
+		if errors.Is(err, sql.ErrNoRows) {
+			return echo.NewHTTPError(http.StatusPreconditionFailed, "Seller not found")
+		}
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
