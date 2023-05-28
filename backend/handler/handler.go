@@ -9,6 +9,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+	"context"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
@@ -16,6 +18,7 @@ import (
 	"github.com/ayaco0/mecari-build-hackathon-2023/backend/domain"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/bcrypt"
+	"github.com/sashabaranov/go-openai"
 )
 
 var (
@@ -105,6 +108,10 @@ type loginResponse struct {
 	Token string `json:"token"`
 }
 
+type CategoryResponse struct {
+	Category string `json:"category"`
+}
+
 type Handler struct {
 	DB       *sql.DB
 	UserRepo db.UserRepository
@@ -137,8 +144,6 @@ func (h *Handler) AccessLog(c echo.Context) error {
 }
 
 func (h *Handler) Register(c echo.Context) error {
-	// TODO: validation
-	// http.StatusBadRequest(400)
 	req := new(registerRequest)
 	if err := c.Bind(req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err)
@@ -170,8 +175,6 @@ func (h *Handler) Register(c echo.Context) error {
 
 func (h *Handler) Login(c echo.Context) error {
 	ctx := c.Request().Context()
-	// TODO: validation
-	// http.StatusBadRequest(400)
 	req := new(loginRequest)
 	if err := c.Bind(req); err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, err)
@@ -454,7 +457,6 @@ func (h *Handler) GetCategories(c echo.Context) error {
 func (h *Handler) GetImage(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	// TODO: overflow
 	itemID, err := strconv.ParseInt(c.Param("itemID"), 10, 64)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, "invalid itemID type")
@@ -523,7 +525,6 @@ func (h *Handler) Purchase(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, err)
 	}
 
-	// TODO: overflow
 	itemID, err := strconv.ParseInt(c.Param("itemID"), 10, 64)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
@@ -593,4 +594,69 @@ func getEnv(key string, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+func extractCategory(response string, categories []string) string {
+	response = strings.ToLower(response)
+
+	// カテゴリ名の抽出
+	for _, category := range categories {
+		if strings.Contains(response, category) {
+			return category
+		}
+	}
+
+	// 該当するカテゴリがない場合
+	return "category not found"
+}
+
+func (h *Handler) CategorizeText(ctx context.Context, text string) (string, error) {
+    // OpenAI クライアントを作成
+    client := openai.NewClient("YOUR_API_KEY")
+	msgs := []openai.ChatCompletionMessage{}
+	
+	// カテゴリ一覧を取得
+	cats, err := h.ItemRepo.GetCategories(ctx)
+	categories := make([]string, len(cats))
+	for i, cat := range cats {
+		categories[i] = cat.Name
+	}
+	fmt.Println(categories)
+	categoryString := strings.Join(categories, ", ")
+	fmt.Println(categoryString)
+
+	// promptを作成
+	text = "商品カテゴリ名一覧は"+categoryString+"です。以下の商品説明文から商品のカテゴリ名を推定してください。"+text
+	msgs = append(msgs, openai.ChatCompletionMessage{Role: openai.ChatMessageRoleUser, Content: text})
+    
+	// GPT-3.5 モデルに対してリクエストを送信
+	resp, err := client.CreateChatCompletion(
+		ctx,
+		openai.ChatCompletionRequest{Model: openai.GPT3Dot5Turbo, Messages: msgs},
+	)
+    if err != nil {
+        return "", err
+    }
+
+    // レスポンスから推定されたカテゴリを取得
+    response := resp.Choices[0].Message.Content
+	category := extractCategory(response, categories)
+
+    return category, nil
+}
+
+func (h *Handler) SuggestCategory(c echo.Context) error {
+	ctx := c.Request().Context()
+	text := c.QueryParam("text")
+
+	category, err := h.CategorizeText(ctx, text)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, err)
+	}
+
+	res := CategoryResponse{
+		Category: category,
+	}
+
+	return c.JSON(http.StatusOK, res)
 }
