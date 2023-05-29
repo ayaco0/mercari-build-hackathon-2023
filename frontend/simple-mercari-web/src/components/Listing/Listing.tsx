@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useCookies } from "react-cookie";
 import { MerComponent } from "../MerComponent";
 import { toast } from "react-toastify";
@@ -21,7 +21,7 @@ type formDataType = {
 export const Listing: React.FC = () => {
   const initialState = {
     name: "",
-    category_id: 1,
+    category_id: -1,
     price: 0,
     description: "",
     image: "",
@@ -29,7 +29,9 @@ export const Listing: React.FC = () => {
   const [values, setValues] = useState<formDataType>(initialState);
   const [categories, setCategories] = useState<Category[]>([]);
   const [cookies] = useCookies(["token", "userID"]);
+  const [searchCategory, setSearchCategory] = useState<string>("");
   const [suggestedCategory, setSuggestedCategory] = useState<string>("");
+  const categorySelectRef = useRef(null);
 
   const onValueChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setValues({
@@ -108,7 +110,7 @@ export const Listing: React.FC = () => {
       .then((items) => {
         const updatedCategories = items.map((category) => ({
           ...category,
-          soldOut: category.name === "SoldOut", 
+          soldOut: category.name === "SoldOut",
         }));
         setCategories(updatedCategories);
       })
@@ -120,7 +122,7 @@ export const Listing: React.FC = () => {
 
   const suggestCategory = () => {
     // 「Suggest category」ボタンがクリックされたときに実行される関数
-    const text = values.name;
+    const text = searchCategory;
 
     // クエリパラメータを含んだURLを作成
     const url = `http://127.0.0.1:9000/suggest?text=${encodeURIComponent(text)}`;
@@ -129,7 +131,9 @@ export const Listing: React.FC = () => {
     fetch(url)
       .then((response) => response.json())
       .then((data) => {
+        console.log(data);
         setSuggestedCategory(data.category);
+        selectCategory(data.category);
       })
       .catch((error) => {
         toast.error("Failed to suggest category");
@@ -141,6 +145,17 @@ export const Listing: React.FC = () => {
     fetchCategories();
   }, []);
 
+  const selectCategory = (categoryName: string) => {
+    const categorySelect = document.getElementById('MerTextInput') as HTMLInputElement;
+    if (categorySelect === null) return;
+    for (let i = 0; i < categories.length; i++) {
+      if (categories[i].name === categoryName) {
+        categorySelect.value = categories[i].id.toString();
+      }
+    }
+  };
+
+
   return (
     <MerComponent>
       <div className="Listing">
@@ -149,9 +164,11 @@ export const Listing: React.FC = () => {
             <input
               type="text"
               name="name"
-              id="MerTextInput"
-              placeholder="name"
-              onChange={onValueChange}
+              id="suggestName"
+              placeholder="type item name"
+              onChange={(e) => {
+                setSearchCategory(e.target.value);
+              }}
               required
             />
             <button type="button" onClick={suggestCategory} id="MerButton">
@@ -161,12 +178,13 @@ export const Listing: React.FC = () => {
             <select
               name="category_id"
               id="MerTextInput"
-              // value={values.category_id}
+              value={values.category_id}
+              ref={categorySelectRef}
               onChange={onSelectChange}
             >
-           
-              <option value=""disabled selected>category (選択してください)</option>
-            
+
+              <option value={-1} disabled selected>category (選択してください)</option>
+
 
               {categories &&
                 categories.map((category) => (
